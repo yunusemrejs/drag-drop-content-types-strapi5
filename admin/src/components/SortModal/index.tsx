@@ -47,8 +47,11 @@ const SortModal = () => {
   const contentTypePath = paths[paths.length - 1];
 
   const params = queryParams as unknown as QueryParams;
-  const pageSize = parseInt(params?.pageSize) ?? 0;
-  const currentPage = parseInt(params?.page) ?? 0;
+  // `?? 0` can never catch parseInt's NaN (it is not null/undefined), so without explicit
+  // defaults the plugin silently dies whenever the URL carries no pagination params — which is
+  // the common case: the Content Manager restores `pageSize` from localStorage but never `page`.
+  const pageSize = parseInt(params?.pageSize ?? '') || 10;
+  const currentPage = parseInt(params?.page ?? '') || 1;
 
   // Get locale from query params
   const locale = params?.['plugins[i18n][locale]'];
@@ -134,7 +137,9 @@ const SortModal = () => {
         if (entries?.data?.length) {
           const firstEntry = entries.data[0];
           const firstEntryRank = (firstEntry as any)[settings.rank];
-          if (entries.data?.length > 0 && firstEntryRank && !!firstEntryRank.toString()) {
+          // `!= null` instead of truthiness: a rank of 0 is a perfectly valid value and must not
+          // keep the sort button disabled.
+          if (entries.data?.length > 0 && firstEntryRank != null) {
             setStatus('success');
           }
         }
