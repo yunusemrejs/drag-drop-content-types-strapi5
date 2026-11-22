@@ -23,8 +23,7 @@ const SortModal = () => {
   const { get, post, put } = useFetchClient();
 
   const [data, setData] = useState<GetPageEntriesResponse[]>([]);
-  // const [currentPage, setCurrentPage] = useState(1);
-  // const [pageSize, setPageSize] = useState(10);
+  const [defaultPageSize, setDefaultPageSize] = useState(10);
   const [pagination, setPagination] = useState<Pagination>();
   const [status, setStatus] = useState('loading');
   const [mainField, setMainField] = useState('id');
@@ -52,7 +51,7 @@ const SortModal = () => {
   // `?? 0` can never catch parseInt's NaN (it is not null/undefined), so without explicit
   // defaults the plugin silently dies whenever the URL carries no pagination params — which is
   // the common case: the Content Manager restores `pageSize` from localStorage but never `page`.
-  const pageSize = parseInt(params?.pageSize ?? '', 10) || 10;
+  const pageSize = parseInt(params?.pageSize ?? '', 10) || defaultPageSize;
   const currentPage = parseInt(params?.page ?? '', 10) || 1;
 
   // Get locale from query params (only keep non-empty string values)
@@ -61,9 +60,7 @@ const SortModal = () => {
     typeof rawLocale === 'string' && rawLocale.trim().length > 0 ? rawLocale.trim() : undefined;
 
   const listIncrementSize = pageSize ? Math.max(1, Math.floor(pageSize / 2)) : 1;
-  const hasMore = noEntriesFromNextPage
-    ? noEntriesFromNextPage + listIncrementSize >= data?.length - 1
-    : false;
+  const hasMore = pagination ? data.length < pagination.total : false;
 
   // Show loading symbol after refetching the entries
   const refetchEntries = React.useCallback(() => dispatch(getData(uid, undefined)), [dispatch]);
@@ -87,10 +84,11 @@ const SortModal = () => {
         `/content-manager/content-types/${contentTypePath}/configuration`
       );
       const settings = data.data.contentType?.settings;
+      const configuredPageSize = settings?.pageSize || 10;
       setMainField(settings.mainField);
       setUid(data.data.contentType?.uid);
-      // setPageSize(settings.pageSize);
-      setNoEntriesFromNextPage(Math.floor(settings.pageSize / 2));
+      setDefaultPageSize(configuredPageSize);
+      setNoEntriesFromNextPage(Math.floor(configuredPageSize / 2));
     } catch (e) {
       console.log(e);
     }
@@ -194,11 +192,12 @@ const SortModal = () => {
       const sortedList = arrayMoveImmutable(data, oldIndex, newIndex);
       const rankUpdates = [];
       let rankHasChanged = false;
+      const startIndex = Math.max(0, (currentPage - 1) * pageSize - noEntriesFromNextPage);
       // Iterate over all results and append them to the list
       for (let i = 0; i < sortedList.length; i++) {
         // Only update changed values
         if (sortedList[i].id != data[i].id) {
-          const newRank = pageSize * (currentPage - 1) + i || 0;
+          const newRank = startIndex + i;
           const update = {
             id: sortedList[i].id,
             rank: newRank,
