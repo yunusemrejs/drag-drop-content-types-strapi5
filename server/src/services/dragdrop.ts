@@ -5,7 +5,7 @@ import { PluginSettingsResponse, RankUpdate } from '../../../typings';
 /**
  * @typedef {object} DragDropService
  * @property {() => { body: string }} getWelcomeMessage - Returns a welcome message.
- * @property {(contentType: StrapiTypes.UID.CollectionType, start: number, limit: number, locale: string, rankFieldName: string) => Promise<any>} sortIndex - Retrieves sorted index data for a content type.
+ * @property {(contentType: StrapiTypes.UID.CollectionType, start: number, limit: number, locale: string | undefined, rankFieldName: string) => Promise<any>} sortIndex - Retrieves sorted index data for a content type.
  * @property {(config: PluginSettingsResponse, updates: RankUpdate[], contentType: StrapiTypes.UID.CollectionType) => Promise<any>} batchUpdate - Updates the rank of multiple entries in a content type.
  */
 
@@ -32,7 +32,7 @@ const dragdrop = ({ strapi }: { strapi: Core.Strapi }) => ({
    * @param {StrapiTypes.UID.CollectionType} contentType - The content type UID.
    * @param {number} start - The start index.
    * @param {number} limit - The limit of results.
-   * @param {string} locale - The locale.
+   * @param {string | undefined} locale - The locale.
    * @param {string} rankFieldName - The field name to sort by.
    * @returns {Promise<any>}
    */
@@ -40,17 +40,26 @@ const dragdrop = ({ strapi }: { strapi: Core.Strapi }) => ({
     contentType: StrapiTypes.UID.CollectionType,
     start: number,
     limit: number,
-    locale: string,
+    locale: string | undefined,
     rankFieldName: string
   ) {
-    let indexData = {
+    const indexData: {
+      sort: {};
+      populate: '*';
+      start: number;
+      limit: number;
+      locale?: string;
+    } = {
       sort: {},
       populate: '*',
       start: start,
       limit: limit,
-      locale: locale,
     };
     indexData.sort[rankFieldName] = 'asc';
+    const normalizedLocale = typeof locale === 'string' ? locale.trim() : '';
+    if (normalizedLocale && normalizedLocale !== 'null' && normalizedLocale !== 'undefined') {
+      indexData.locale = normalizedLocale;
+    }
     try {
       return await strapi.documents(contentType).findMany(indexData);
     } catch (err) {

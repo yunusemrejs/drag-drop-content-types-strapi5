@@ -1,18 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 
 /**
- *
- * @returns {Object} | {}}
+ * Returns the current URL search params reactively as a key-value map.
+ * Uses react-router-dom's `useLocation` so SPA navigation updates query params.
  */
 export function useQueryParams() {
-  const [params, setParams] = useState<URLSearchParams | null>(null);
+  const { search } = useLocation();
 
-  useEffect(() => {
-    const q = new Proxy(new URLSearchParams(window.location.search), {
-      get: (queryParams, prop) => queryParams.get(prop.toString()),
+  const queryParams = useMemo(() => {
+    const searchParams = new URLSearchParams(search);
+    const result: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      result[key] = value;
     });
-    setParams(q);
-  }, [window.location.search]);
+    return result;
+  }, [search]);
 
-  return { queryParams: params };
+  return { queryParams };
 }
