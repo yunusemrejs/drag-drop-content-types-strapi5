@@ -5,7 +5,7 @@ import { Drag } from '@strapi/icons';
 import { Popover } from '@strapi/design-system';
 import SortableList from './SortableList';
 
-const SortMenu = ({ status, data, onSortEnd, onShowMore, hasMore, settings }: SortMenuProps) => {
+const SortMenu = ({ status, data, onSortEnd, onShowMore, onShowAll, hasMore, settings }: SortMenuProps) => {
     const [visible, setVisible] = useState(false);
     const buttonRef = React.useRef(null);
     const togglePortal = React.useCallback(() => {
@@ -41,6 +41,7 @@ const SortMenu = ({ status, data, onSortEnd, onShowMore, hasMore, settings }: So
                     <SortableList
                         data={data}
                         onShowMore={onShowMore}
+                        onShowAll={onShowAll}
                         onSortEnd={onSortEnd}
                         hasMore={hasMore}
                         settings={settings}

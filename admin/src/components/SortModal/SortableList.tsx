@@ -19,7 +19,7 @@ import SortableListItem from './SortableListItem';
 import { getSubtitle, getTitle } from './utils';
 import { TItem } from './CustomItem';
 
-const SortableList = ({ data, onShowMore, hasMore, settings, onSortEnd }: SortableListProps) => {
+const SortableList = ({ data, onShowMore, onShowAll, hasMore, settings, onSortEnd }: SortableListProps) => {
   const { formatMessage } = useIntl();
 
   let { title, subtitle, mainField } = settings;
@@ -108,10 +108,15 @@ const SortableList = ({ data, onShowMore, hasMore, settings, onSortEnd }: Sortab
         </div>
       </DndContext>
       <Divider margin={0} />
-      <Box padding={1}>
+      <Box padding={1} style={{ display: 'flex', gap: '8px' }}>
         <Button size="S" disabled={!hasMore} onClick={onShowMore}>
           {formatMessage({ id: getTrad('plugin.settings.sortableList.showMore') })}
         </Button>
+        {onShowAll && (
+          <Button size="S" variant="tertiary" disabled={!hasMore} onClick={onShowAll}>
+            {formatMessage({ id: getTrad('plugin.settings.sortableList.showAll') })}
+          </Button>
+        )}
       </Box>
     </div>
   );

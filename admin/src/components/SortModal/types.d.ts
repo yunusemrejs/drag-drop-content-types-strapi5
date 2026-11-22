@@ -4,6 +4,7 @@ export interface SortMenuProps {
     onOpen: () => void;
     onSortEnd: (item: UpdateContentTypeParams) => void;
     onShowMore: () => void;
+    onShowAll?: () => void;
     hasMore?: boolean;
     settings: FetchedSettings;
 };
@@ -11,6 +12,7 @@ export interface SortMenuProps {
 export interface SortableListProps {
     data: GetPageEntriesResponse[];
     onShowMore: () => void;
+    onShowAll?: () => void;
     onSortEnd: (item: UpdateContentTypeParams) => void;
     hasMore?: boolean
     settings: FetchedSettings;
