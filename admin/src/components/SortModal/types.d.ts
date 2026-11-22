@@ -22,9 +22,9 @@ export interface SortableListItemProps {
 };
 
 export interface QueryParams {
-    pageSize: string;
-    page: string;
-    'plugins[i18n][locale]': string;
+    pageSize?: string;
+    page?: string;
+    'plugins[i18n][locale]'?: string;
 }
 
 export interface Pagination {

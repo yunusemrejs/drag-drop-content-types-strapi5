@@ -1,6 +1,7 @@
 import { arrayMoveImmutable } from 'array-move';
 import React, { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
+import { useLocation } from 'react-router-dom';
 import { useFetchClient, useNotification, useAPIErrorHandler } from '@strapi/strapi/admin';
 
 import { getData, getDataSucceeded } from '../../utils/strapi';
@@ -42,21 +43,24 @@ const SortModal = () => {
   const { toggleNotification } = useNotification();
   const { formatAPIError } = useAPIErrorHandler();
 
-  // Get content type from url
-  const paths = window.location.pathname.split('/');
-  const contentTypePath = paths[paths.length - 1];
+  const { pathname } = useLocation();
 
-  const params = queryParams as unknown as QueryParams;
+  // Get content type from url (strip trailing slashes so `/collection-types/api::foo.foo/` resolves)
+  const contentTypePath = pathname.replace(/\/+$/, '').split('/').pop() ?? '';
+
+  const params = queryParams as QueryParams;
   // `?? 0` can never catch parseInt's NaN (it is not null/undefined), so without explicit
   // defaults the plugin silently dies whenever the URL carries no pagination params — which is
   // the common case: the Content Manager restores `pageSize` from localStorage but never `page`.
-  const pageSize = parseInt(params?.pageSize ?? '') || 10;
-  const currentPage = parseInt(params?.page ?? '') || 1;
+  const pageSize = parseInt(params?.pageSize ?? '', 10) || 10;
+  const currentPage = parseInt(params?.page ?? '', 10) || 1;
 
-  // Get locale from query params
-  const locale = params?.['plugins[i18n][locale]'];
+  // Get locale from query params (only keep non-empty string values)
+  const rawLocale = params?.['plugins[i18n][locale]'];
+  const locale =
+    typeof rawLocale === 'string' && rawLocale.trim().length > 0 ? rawLocale.trim() : undefined;
 
-  const listIncrementSize = pageSize ? pageSize / 2 : 1;
+  const listIncrementSize = pageSize ? Math.max(1, Math.floor(pageSize / 2)) : 1;
   const hasMore = noEntriesFromNextPage
     ? noEntriesFromNextPage + listIncrementSize >= data?.length - 1
     : false;
@@ -74,6 +78,9 @@ const SortModal = () => {
 
   // Fetch content type config settings
   const fetchContentTypeConfig = async () => {
+    if (!contentTypePath) {
+      return;
+    }
     // TODO: tie this in with middleware with the request that is already being made on page load
     try {
       const { data } = await get<ContentTypeConfigResponse>(
@@ -83,7 +90,7 @@ const SortModal = () => {
       setMainField(settings.mainField);
       setUid(data.data.contentType?.uid);
       // setPageSize(settings.pageSize);
-      setNoEntriesFromNextPage(settings.pageSize / 2);
+      setNoEntriesFromNextPage(Math.floor(settings.pageSize / 2));
     } catch (e) {
       console.log(e);
     }
@@ -109,8 +116,14 @@ const SortModal = () => {
 
   // Fetch page entries from the sort controller
   const getPageEntries = async () => {
-    if (pageSize) {
-      const sortIndexParam = {
+    if (pageSize && contentTypePath) {
+      const sortIndexParam: {
+        contentType: string;
+        rankFieldName: string;
+        start: number;
+        limit: number;
+        locale?: string;
+      } = {
         contentType: contentTypePath,
         rankFieldName: settings.rank,
         start: Math.max(0, (currentPage - 1) * pageSize - noEntriesFromNextPage),
@@ -118,8 +131,10 @@ const SortModal = () => {
           currentPage === 1
             ? pageSize + noEntriesFromNextPage
             : pageSize + 2 * noEntriesFromNextPage,
-        locale: locale,
       };
+      if (locale) {
+        sortIndexParam.locale = locale;
+      }
       const results = await post<GetPageEntriesResponse[]>(
         `/drag-drop-content-types-strapi5/sort-index`,
         sortIndexParam
@@ -159,8 +174,9 @@ const SortModal = () => {
         setData(entries.data);
 
         // TODO: remove this line and get pagination from elsewhere
+        const localeQuery = locale ? `&locale=${encodeURIComponent(locale)}` : '';
         const { data } = await get<ContentTypeResponse>(
-          `/content-manager/collection-types/${contentTypePath}?sort=${settings.rank}:asc&page=${currentPage}&pageSize=${pageSize}&locale=${locale}`
+          `/content-manager/collection-types/${contentTypePath}?sort=${settings.rank}:asc&page=${currentPage}&pageSize=${pageSize}${localeQuery}`
         );
         setPagination(data.pagination);
       }
@@ -235,7 +251,7 @@ const SortModal = () => {
   // Fetch content-type on page render
   useEffect(() => {
     fetchContentTypeConfig();
-  }, []);
+  }, [contentTypePath]);
 
   // Fetch settings when mainField changes
   useEffect(() => {
@@ -254,7 +270,7 @@ const SortModal = () => {
     if (settings?.rank && pageSize && currentPage) {
       fetchContentType();
     }
-  }, [noEntriesFromNextPage, locale, pageSize, currentPage, settings]);
+  }, [noEntriesFromNextPage, locale, pageSize, currentPage, settings, contentTypePath]);
 
   // Sync entries in sort menu to match current page of ListView when content-manager page changes
   // useEffect(() => {
