@@ -1,11 +1,12 @@
 import { arrayMoveImmutable } from 'array-move';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { useLocation } from 'react-router-dom';
 import { useFetchClient, useNotification, useAPIErrorHandler } from '@strapi/strapi/admin';
 
 import { getData, getDataSucceeded } from '../../utils/strapi';
 import { useQueryParams } from '../../utils/useQueryParams';
+import { extractFilterParams } from '../../utils/filters';
 import pluginPermissions from '../../permissions';
 import {
   ContentTypeConfigResponse,
@@ -35,6 +36,7 @@ const SortModal = () => {
     mainField: null,
   });
   const [noEntriesFromNextPage, setNoEntriesFromNextPage] = useState(0);
+  const [showAll, setShowAll] = useState(false);
 
   const { queryParams } = useQueryParams();
   const dispatch = useDispatch();
@@ -42,10 +44,15 @@ const SortModal = () => {
   const { toggleNotification } = useNotification();
   const { formatAPIError } = useAPIErrorHandler();
 
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   // Get content type from url (strip trailing slashes so `/collection-types/api::foo.foo/` resolves)
   const contentTypePath = pathname.replace(/\/+$/, '').split('/').pop() ?? '';
+
+  const { filterRecord, filterQueryString, hasActiveFilters } = useMemo(
+    () => extractFilterParams(search),
+    [search]
+  );
 
   const params = queryParams as QueryParams;
   // `?? 0` can never catch parseInt's NaN (it is not null/undefined), so without explicit
@@ -112,26 +119,40 @@ const SortModal = () => {
     }
   };
 
+  const getWindowBounds = () => {
+    if (showAll && pagination?.total) {
+      return { start: 0, limit: pagination.total };
+    }
+    const start = Math.max(0, (currentPage - 1) * pageSize - noEntriesFromNextPage);
+    const limit =
+      currentPage === 1
+        ? pageSize + noEntriesFromNextPage
+        : pageSize + 2 * noEntriesFromNextPage;
+    return { start, limit };
+  };
+
   // Fetch page entries from the sort controller
   const getPageEntries = async () => {
     if (pageSize && contentTypePath) {
+      const { start, limit } = getWindowBounds();
       const sortIndexParam: {
         contentType: string;
         rankFieldName: string;
         start: number;
         limit: number;
         locale?: string;
+        filters?: Record<string, string>;
       } = {
         contentType: contentTypePath,
         rankFieldName: settings.rank,
-        start: Math.max(0, (currentPage - 1) * pageSize - noEntriesFromNextPage),
-        limit:
-          currentPage === 1
-            ? pageSize + noEntriesFromNextPage
-            : pageSize + 2 * noEntriesFromNextPage,
+        start,
+        limit,
       };
       if (locale) {
         sortIndexParam.locale = locale;
+      }
+      if (hasActiveFilters) {
+        sortIndexParam.filters = filterRecord;
       }
       const results = await post<GetPageEntriesResponse[]>(
         `/drag-drop-content-types-strapi5/sort-index`,
@@ -173,8 +194,9 @@ const SortModal = () => {
 
         // TODO: remove this line and get pagination from elsewhere
         const localeQuery = locale ? `&locale=${encodeURIComponent(locale)}` : '';
+        const filterSuffix = filterQueryString ? `&${filterQueryString}` : '';
         const { data } = await get<ContentTypeResponse>(
-          `/content-manager/collection-types/${contentTypePath}?sort=${settings.rank}:asc&page=${currentPage}&pageSize=${pageSize}${localeQuery}`
+          `/content-manager/collection-types/${contentTypePath}?sort=${settings.rank}:asc&page=${currentPage}&pageSize=${pageSize}${localeQuery}${filterSuffix}`
         );
         setPagination(data.pagination);
       }
@@ -192,12 +214,25 @@ const SortModal = () => {
       const sortedList = arrayMoveImmutable(data, oldIndex, newIndex);
       const rankUpdates = [];
       let rankHasChanged = false;
-      const startIndex = Math.max(0, (currentPage - 1) * pageSize - noEntriesFromNextPage);
+      const { start: startIndex } = getWindowBounds();
+
+      // When filtering, preserve the existing distinct rank slots of the filtered subset
+      // so reordering does not collide with unfiltered entries' ranks.
+      const existingRanks = data.map((entry) => Number((entry as any)[settings.rank]));
+      const hasDistinctNumericRanks =
+        hasActiveFilters &&
+        existingRanks.length === sortedList.length &&
+        existingRanks.every((r) => Number.isFinite(r)) &&
+        new Set(existingRanks).size === existingRanks.length;
+      const preservedRankSlots = hasDistinctNumericRanks
+        ? [...existingRanks].sort((a, b) => a - b)
+        : null;
+
       // Iterate over all results and append them to the list
       for (let i = 0; i < sortedList.length; i++) {
         // Only update changed values
         if (sortedList[i].id != data[i].id) {
-          const newRank = startIndex + i;
+          const newRank = preservedRankSlots ? preservedRankSlots[i] : startIndex + i;
           const update = {
             id: sortedList[i].id,
             rank: newRank,
@@ -217,11 +252,13 @@ const SortModal = () => {
 
       // distinguish last page from full/first page
       let sortedListViewEntries =
-        currentPage == 1
-          ? sortedList.slice(0, pageSize)
-          : sortedList.length < pageSize
-            ? sortedList.slice(noEntriesFromNextPage, sortedList.length)
-            : sortedList.slice(noEntriesFromNextPage, pageSize + noEntriesFromNextPage);
+        showAll
+          ? sortedList.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+          : currentPage == 1
+            ? sortedList.slice(0, pageSize)
+            : sortedList.length < pageSize
+              ? sortedList.slice(noEntriesFromNextPage, sortedList.length)
+              : sortedList.slice(noEntriesFromNextPage, pageSize + noEntriesFromNextPage);
       // set new sorted data (refresh UI list component)
       setData(sortedList);
       setStatus('success');
@@ -247,6 +284,17 @@ const SortModal = () => {
     setNoEntriesFromNextPage(noEntriesFromNextPage + listIncrementSize);
   };
 
+  const showAllHandler = () => {
+    if (pagination?.total) {
+      setShowAll(true);
+    }
+  };
+
+  // Reset "Show all" when navigating to another content type, page, locale, or filter
+  useEffect(() => {
+    setShowAll(false);
+  }, [contentTypePath, locale, filterQueryString, currentPage, pageSize]);
+
   // Fetch content-type on page render
   useEffect(() => {
     fetchContentTypeConfig();
@@ -269,18 +317,16 @@ const SortModal = () => {
     if (settings?.rank && pageSize && currentPage) {
       fetchContentType();
     }
-  }, [noEntriesFromNextPage, locale, pageSize, currentPage, settings, contentTypePath]);
-
-  // Sync entries in sort menu to match current page of ListView when content-manager page changes
-  // useEffect(() => {
-  //   if (params?.page) {
-  //     const page = parseInt(params?.page);
-  //     const pageSize = parseInt(params?.pageSize);
-
-  //     setCurrentPage(page);
-  //     setPageSize(pageSize);
-  //   }
-  // }, [params?.page, params?.pageSize]);
+  }, [
+    noEntriesFromNextPage,
+    showAll,
+    locale,
+    filterQueryString,
+    pageSize,
+    currentPage,
+    settings,
+    contentTypePath,
+  ]);
 
   return (
     // <CheckPermissions permissions={pluginPermissions.main}>
@@ -290,6 +336,7 @@ const SortModal = () => {
       onOpen={fetchContentType}
       onSortEnd={updateContentType}
       onShowMore={showMoreHandler}
+      onShowAll={showAllHandler}
       hasMore={hasMore}
       settings={settings}
     />

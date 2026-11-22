@@ -28,7 +28,8 @@ const controller = ({ strapi }: { strapi: Core.Strapi }) => ({
         ctx.request.body.start,
         ctx.request.body.limit,
         ctx.request.body.locale,
-        ctx.request.body.rankFieldName
+        ctx.request.body.rankFieldName,
+        ctx.request.body.filters
       );
     } catch (err) {
       ctx.throw(500, err);

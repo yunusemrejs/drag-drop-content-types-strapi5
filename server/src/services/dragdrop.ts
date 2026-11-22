@@ -1,6 +1,7 @@
 import type { Core } from '@strapi/strapi';
 import type * as StrapiTypes from '@strapi/types/dist';
 import { PluginSettingsResponse, RankUpdate } from '../../../typings';
+import { parseFilters } from '../utils/parseFilters';
 
 /**
  * @typedef {object} DragDropService
@@ -41,7 +42,8 @@ const dragdrop = ({ strapi }: { strapi: Core.Strapi }) => ({
     start: number,
     limit: number,
     locale: string | undefined,
-    rankFieldName: string
+    rankFieldName: string,
+    filters?: unknown
   ) {
     const indexData: {
       sort: {};
@@ -49,6 +51,7 @@ const dragdrop = ({ strapi }: { strapi: Core.Strapi }) => ({
       start: number;
       limit: number;
       locale?: string;
+      filters?: Record<string, unknown>;
     } = {
       sort: {},
       populate: '*',
@@ -60,9 +63,14 @@ const dragdrop = ({ strapi }: { strapi: Core.Strapi }) => ({
     if (normalizedLocale && normalizedLocale !== 'null' && normalizedLocale !== 'undefined') {
       indexData.locale = normalizedLocale;
     }
+    const parsedFilters = parseFilters(filters);
+    if (parsedFilters) {
+      indexData.filters = parsedFilters;
+    }
     try {
       return await strapi.documents(contentType).findMany(indexData);
     } catch (err) {
+      strapi.log?.error?.('Error in sortIndex:', err);
       return {};
     }
   },
